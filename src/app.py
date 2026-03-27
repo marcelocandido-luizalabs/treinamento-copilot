@@ -11,6 +11,44 @@ from fastapi.responses import RedirectResponse
 import os
 from pathlib import Path
 
+# Business logic functions (testable, no FastAPI dependencies)
+def get_activity_by_name(activities_dict, activity_name):
+    """Get an activity by name. Raises ValueError if not found."""
+    if activity_name not in activities_dict:
+        raise ValueError("Activity not found")
+    return activities_dict[activity_name]
+
+
+def add_participant(activities_dict, activity_name, email):
+    """Add a participant to an activity.
+    
+    Raises:
+        ValueError: If activity not found, participant already signed up, or activity is full
+    """
+    activity = get_activity_by_name(activities_dict, activity_name)
+    
+    if email in activity["participants"]:
+        raise ValueError("Student already signed up for this activity")
+    
+    if len(activity["participants"]) >= activity["max_participants"]:
+        raise ValueError("Activity is at maximum capacity")
+    
+    activity["participants"].append(email)
+
+
+def remove_participant(activities_dict, activity_name, email):
+    """Remove a participant from an activity.
+    
+    Raises:
+        ValueError: If activity not found or participant not signed up
+    """
+    activity = get_activity_by_name(activities_dict, activity_name)
+    
+    if email not in activity["participants"]:
+        raise ValueError("Student not signed up for this activity")
+    
+    activity["participants"].remove(email)
+
 app = FastAPI(title="Mergington High School API",
               description="API for viewing and signing up for extracurricular activities")
 
@@ -91,36 +129,30 @@ def get_activities():
 @app.post("/activities/{activity_name}/signup")
 def signup_for_activity(activity_name: str, email: str):
     """Sign up a student for an activity"""
-    # Validate activity exists
-    if activity_name not in activities:
-        raise HTTPException(status_code=404, detail="Activity not found")
-
-    # Get the specific activity
-    activity = activities[activity_name]
-
-    # Validate student is not already signed up
-    if email in activity["participants"]:
-        raise HTTPException(status_code=400, detail="Student already signed up for this activity")
-
-    # Add student
-    activity["participants"].append(email)
+    try:
+        add_participant(activities, activity_name, email)
+    except ValueError as e:
+        if "Activity not found" in str(e):
+            raise HTTPException(status_code=404, detail=str(e))
+        elif "already signed up" in str(e):
+            raise HTTPException(status_code=400, detail=str(e))
+        elif "maximum capacity" in str(e):
+            raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
+    
     return {"message": f"Signed up {email} for {activity_name}"}
 
 
 @app.delete("/activities/{activity_name}/unregister")
 def unregister_from_activity(activity_name: str, email: str):
     """Remove a student from an activity"""
-    # Validate activity exists
-    if activity_name not in activities:
-        raise HTTPException(status_code=404, detail="Activity not found")
-
-    # Get the specific activity
-    activity = activities[activity_name]
-
-    # Validate student is signed up
-    if email not in activity["participants"]:
-        raise HTTPException(status_code=400, detail="Student not signed up for this activity")
-
-    # Remove student
-    activity["participants"].remove(email)
+    try:
+        remove_participant(activities, activity_name, email)
+    except ValueError as e:
+        if "Activity not found" in str(e):
+            raise HTTPException(status_code=404, detail=str(e))
+        elif "not signed up" in str(e):
+            raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
+    
     return {"message": f"Unregistered {email} from {activity_name}"}
